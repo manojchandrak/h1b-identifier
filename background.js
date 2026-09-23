@@ -1,7 +1,10 @@
 // Central lookup service. Loads data/sponsor-index.json once per service-worker
 // lifetime and answers lookup requests from content.js and popup.js.
 //
-// Index format: { "NORMALIZED NAME": [totalApprovals, ...fiscalYears] }
+// Index format: { "NORMALIZED NAME": { a: totalApprovals, ay: [uscisFiscalYears],
+//                                       l: totalLcaFilings, ly: [lcaFiscalYears] } }
+// a/ay come from USCIS approved-petition data (FY2019-2023); l/ly come from DOL LCA
+// filings (any case status), which is broader and reaches further into the present.
 
 const SUFFIX_WORDS = new Set([
   'inc', 'incorporated', 'llc', 'llp', 'lp', 'ltd', 'limited', 'corp',
@@ -35,14 +38,24 @@ function loadIndex() {
 /** Direct key match first, then a whole-word-subset fallback (e.g. "Acme Consulting"
  * matches "ACME CONSULTING GROUP") rather than raw substring containment, which would
  * wrongly match e.g. "Develop" inside "Development Dimensions International". */
+function toResult(matchedName, rec) {
+  return {
+    found: true,
+    matchedName,
+    approvals: rec.a,
+    uscisYears: rec.ay,
+    lcaFilings: rec.l,
+    lcaYears: rec.ly,
+  }
+}
+
 async function findSponsor(companyName) {
   const index = await loadIndex()
   const key = normalizeCompanyName(companyName)
   if (!key) return { found: false }
 
   if (index[key]) {
-    const [approvals, ...years] = index[key]
-    return { found: true, matchedName: key, approvals, years }
+    return toResult(key, index[key])
   }
 
   const keyWords = key.split(' ').filter((w) => w.length >= 3)
@@ -52,19 +65,20 @@ async function findSponsor(companyName) {
   for (const sponsorKey in index) {
     const sponsorWords = sponsorKey.split(' ').filter((w) => w.length >= 3)
     if (sponsorWords.length === 0) continue
+    // The query's words must all appear in the candidate's words, never the reverse ("Acme
+    // Consulting" should find "ACME CONSULTING GROUP", but a query for "Oak Ridge National
+    // Laboratory" must not match an unrelated employer whose whole name happens to be "OAK").
+    if (keyWordSet.size > sponsorWords.length) continue
     const sponsorWordSet = new Set(sponsorWords)
-    const [smaller, larger] =
-      keyWordSet.size <= sponsorWordSet.size ? [keyWordSet, sponsorWordSet] : [sponsorWordSet, keyWordSet]
     let allMatch = true
-    for (const w of smaller) {
-      if (!larger.has(w)) {
+    for (const w of keyWordSet) {
+      if (!sponsorWordSet.has(w)) {
         allMatch = false
         break
       }
     }
     if (allMatch) {
-      const [approvals, ...years] = index[sponsorKey]
-      return { found: true, matchedName: sponsorKey, approvals, years }
+      return toResult(sponsorKey, index[sponsorKey])
     }
   }
 

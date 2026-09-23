@@ -1,16 +1,23 @@
 #!/usr/bin/env node
-// Builds data/sponsor-index.json from the USCIS H-1B Employer Data Hub CSV
-// exports in data-source/h1b/ (https://www.uscis.gov/tools/reports-and-studies/h-1b-employer-data-hub).
+// Builds data/sponsor-index.json from two sources:
+//  - USCIS H-1B Employer Data Hub CSV exports in data-source/h1b/
+//    (https://www.uscis.gov/tools/reports-and-studies/h-1b-employer-data-hub) — approved petitions.
+//  - DOL OFLC LCA Disclosure Data CSVs in data-source/lca/ (extracted from the official
+//    xlsx releases at https://www.dol.gov/agencies/eta/foreign-labor/performance) — H-1B labor
+//    condition applications filed with DOL, any case status (Certified, Denied, Withdrawn, etc).
+//    An LCA filing precedes an H-1B petition and is a broader, more current sponsorship signal;
+//    USCIS's own petition-approval data currently only goes through FY2023.
 //
-// Output format: { "NORMALIZED EMPLOYER NAME": [totalApprovals, ...fiscalYears] }
-// e.g. "GOOGLE": [4210, 2019, 2020, 2021, 2022, 2023]
+// Output format: { "NORMALIZED EMPLOYER NAME": { a: totalApprovals, ay: [uscisFiscalYears],
+//                                                 l: totalLcaFilings, ly: [lcaFiscalYears] } }
 //
-// Re-run after dropping newer-year CSVs into data-source/h1b/.
+// Re-run after dropping newer files into data-source/h1b/ or data-source/lca/.
 
 const fs = require('fs')
 const path = require('path')
 
-const SOURCE_DIR = path.join(__dirname, '..', 'data-source', 'h1b')
+const USCIS_DIR = path.join(__dirname, '..', 'data-source', 'h1b')
+const LCA_DIR = path.join(__dirname, '..', 'data-source', 'lca')
 const OUT_FILE = path.join(__dirname, '..', 'data', 'sponsor-index.json')
 
 const SUFFIX_WORDS = new Set([
@@ -61,50 +68,80 @@ function parseCsvLine(line) {
   return fields
 }
 
+function getRecord(index, key) {
+  let rec = index.get(key)
+  if (!rec) {
+    rec = { approvals: 0, uscisYears: [], lcaFilings: 0, lcaYears: [] }
+    index.set(key, rec)
+  }
+  return rec
+}
+
 function main() {
-  if (!fs.existsSync(SOURCE_DIR)) {
-    console.error(`No source directory at ${SOURCE_DIR}`)
-    process.exit(1)
-  }
-  const files = fs.readdirSync(SOURCE_DIR).filter((f) => f.endsWith('.csv'))
-  if (files.length === 0) {
-    console.error(`No CSV files found in ${SOURCE_DIR}`)
-    process.exit(1)
-  }
-
   const index = new Map()
-  let totalRows = 0
 
-  for (const file of files) {
-    const lines = fs.readFileSync(path.join(SOURCE_DIR, file), 'utf-8').split('\n')
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim()
-      if (!line) continue
-      totalRows++
-      const [fyRaw, employerRaw, initApproval, , contApproval] = parseCsvLine(line)
-      if (!employerRaw) continue
-      const key = normalizeCompanyName(employerRaw)
-      if (!key) continue
-      const fy = Number(fyRaw)
-      const approvals = (Number(initApproval) || 0) + (Number(contApproval) || 0)
+  if (fs.existsSync(USCIS_DIR)) {
+    const files = fs.readdirSync(USCIS_DIR).filter((f) => f.endsWith('.csv'))
+    let rows = 0
+    for (const file of files) {
+      const lines = fs.readFileSync(path.join(USCIS_DIR, file), 'utf-8').split('\n')
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim()
+        if (!line) continue
+        rows++
+        const [fyRaw, employerRaw, initApproval, , contApproval] = parseCsvLine(line)
+        if (!employerRaw) continue
+        const key = normalizeCompanyName(employerRaw)
+        if (!key) continue
+        const fy = Number(fyRaw)
+        const approvals = (Number(initApproval) || 0) + (Number(contApproval) || 0)
 
-      const existing = index.get(key) ?? { years: [], approvals: 0 }
-      if (!existing.years.includes(fy)) existing.years.push(fy)
-      existing.approvals += approvals
-      index.set(key, existing)
+        const rec = getRecord(index, key)
+        if (!rec.uscisYears.includes(fy)) rec.uscisYears.push(fy)
+        rec.approvals += approvals
+      }
     }
+    console.log(`USCIS: parsed ${rows} rows from ${files.length} file(s): ${files.join(', ')}`)
+  } else {
+    console.log(`No USCIS source directory at ${USCIS_DIR}, skipping.`)
+  }
+
+  if (fs.existsSync(LCA_DIR)) {
+    const files = fs.readdirSync(LCA_DIR).filter((f) => f.endsWith('.csv'))
+    let rows = 0
+    for (const file of files) {
+      const lines = fs.readFileSync(path.join(LCA_DIR, file), 'utf-8').split('\n')
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim()
+        if (!line) continue
+        rows++
+        const [fyRaw, employerRaw] = parseCsvLine(line)
+        if (!employerRaw) continue
+        const key = normalizeCompanyName(employerRaw)
+        if (!key) continue
+        const fy = Number(fyRaw.replace(/^FY/i, ''))
+        if (!fy) continue
+
+        const rec = getRecord(index, key)
+        if (!rec.lcaYears.includes(fy)) rec.lcaYears.push(fy)
+        rec.lcaFilings++
+      }
+    }
+    console.log(`LCA: parsed ${rows} rows from ${files.length} file(s): ${files.join(', ')}`)
+  } else {
+    console.log(`No LCA source directory at ${LCA_DIR}, skipping.`)
   }
 
   const out = {}
   for (const [key, rec] of index) {
-    rec.years.sort((a, b) => a - b)
-    out[key] = [rec.approvals, ...rec.years]
+    rec.uscisYears.sort((a, b) => a - b)
+    rec.lcaYears.sort((a, b) => a - b)
+    out[key] = { a: rec.approvals, ay: rec.uscisYears, l: rec.lcaFilings, ly: rec.lcaYears }
   }
 
   fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true })
   fs.writeFileSync(OUT_FILE, JSON.stringify(out))
 
-  console.log(`Parsed ${totalRows} rows from ${files.length} file(s): ${files.join(', ')}`)
   console.log(`Indexed ${index.size} unique employers -> ${OUT_FILE}`)
   console.log(`Output size: ${(fs.statSync(OUT_FILE).size / 1024 / 1024).toFixed(2)} MB`)
 }

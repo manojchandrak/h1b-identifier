@@ -40,26 +40,48 @@ function findCompanyElement() {
   return null
 }
 
+function formatYearRange(years) {
+  if (!years || years.length === 0) return ''
+  const min = years[0]
+  const max = years[years.length - 1]
+  return min === max ? `FY${min}` : `FY${min}\u2013${max}`
+}
+
+function describeSponsor(result) {
+  const parts = []
+  if (result.uscisYears.length) {
+    parts.push(
+      `approved petitions ${formatYearRange(result.uscisYears)}` +
+        (result.approvals ? ` (${result.approvals.toLocaleString()})` : '')
+    )
+  }
+  if (result.lcaYears.length) {
+    parts.push(
+      `LCA filed ${formatYearRange(result.lcaYears)}` +
+        (result.lcaFilings ? ` (${result.lcaFilings.toLocaleString()})` : '')
+    )
+  }
+  return parts.join('; ')
+}
+
 function makeBadge(result) {
   const badge = document.createElement('div')
   badge.setAttribute(BADGE_ATTR, 'true')
   if (result.found) {
     badge.className = 'h1b-badge h1b-badge-green'
-    const years = result.years.join(', ')
-    badge.innerHTML =
-      `<span class="h1b-badge-dot"></span> H-1B sponsor &mdash; approved petitions in ${years}` +
-      (result.approvals ? ` (${result.approvals.toLocaleString()} total)` : '')
+    badge.innerHTML = `<span class="h1b-badge-dot"></span> H-1B sponsor &mdash; ${describeSponsor(result)}`
     badge.title =
-      'Matched USCIS H-1B Employer Data Hub record for "' +
+      'Matched record for "' +
       result.matchedName +
-      '". Historical data (fiscal years 2019\u20132023); may miss subsidiaries or alternate legal names.'
+      '" in USCIS approved-petition data (FY2019\u20132023) and/or DOL LCA filing data ' +
+      '(FY2024\u20132026). May miss subsidiaries or alternate legal names.'
   } else {
     badge.className = 'h1b-badge h1b-badge-red'
-    badge.innerHTML = `<span class="h1b-badge-dot"></span> No H-1B record found (USCIS data, 2019\u20132023)`
+    badge.innerHTML = `<span class="h1b-badge-dot"></span> No H-1B record found (USCIS 2019\u20132023, DOL LCA 2024\u20132026)`
     badge.title =
-      'No matching employer found in the USCIS H-1B Employer Data Hub export. This does not guarantee ' +
-      'the company has never sponsored \u2014 it may file under a different legal name, be a new employer, ' +
-      'or sponsor too rarely to appear. Always verify directly with the employer.'
+      'No matching employer found in USCIS approved-petition data or DOL LCA filing data. This does not ' +
+      'guarantee the company has never sponsored \u2014 it may file under a different legal name, be a new ' +
+      'employer, or sponsor too rarely to appear. Always verify directly with the employer.'
   }
   return badge
 }
