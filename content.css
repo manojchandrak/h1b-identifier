@@ -1,0 +1,41 @@
+.h1b-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: default;
+  max-width: 100%;
+}
+
+.h1b-badge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.h1b-badge-green {
+  background: rgba(34, 181, 115, 0.12);
+  color: #178a54;
+  border: 1px solid rgba(34, 181, 115, 0.35);
+}
+
+.h1b-badge-green .h1b-badge-dot {
+  background: #22b573;
+}
+
+.h1b-badge-red {
+  background: rgba(220, 69, 69, 0.1);
+  color: #b53434;
+  border: 1px solid rgba(220, 69, 69, 0.3);
+}
+
+.h1b-badge-red .h1b-badge-dot {
+  background: #dc4545;
+}

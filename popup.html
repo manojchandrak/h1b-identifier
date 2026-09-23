@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>H1B Identifier</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="header">
+      <img src="icons/icon48.png" alt="" width="24" height="24" />
+      <div>
+        <h1>H1B Identifier</h1>
+        <p>USCIS H-1B Employer Data Hub, FY2019&ndash;2023</p>
+      </div>
+    </header>
+
+    <section class="search-section">
+      <form id="searchForm">
+        <input id="companyInput" type="text" placeholder="Company name, e.g. Google" autocomplete="off" />
+        <button type="submit" class="btn btn-primary">Check</button>
+      </form>
+      <p class="auto-note">
+        On LinkedIn, Indeed, and Glassdoor job pages, a badge is added under the company name
+        automatically.
+      </p>
+    </section>
+
+    <section id="result" class="result hidden"></section>
+
+    <footer class="footer">
+      <p>
+        Source:
+        <a href="https://www.uscis.gov/tools/reports-and-studies/h-1b-employer-data-hub" target="_blank" rel="noopener">
+          USCIS H-1B Employer Data Hub
+        </a>
+      </p>
+      <p class="muted">
+        Historical approval data only &mdash; not a guarantee of current or future sponsorship, and a
+        "no record" result doesn't prove a company has never sponsored (it may file under a
+        different legal name). Always confirm directly with the employer.
+      </p>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
