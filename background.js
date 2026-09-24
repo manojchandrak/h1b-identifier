@@ -49,11 +49,23 @@ function toResult(matchedName, rec) {
   }
 }
 
+const lookupCache = new Map()
+
 async function findSponsor(companyName) {
   const index = await loadIndex()
   const key = normalizeCompanyName(companyName)
   if (!key) return { found: false }
 
+  if (lookupCache.has(key)) {
+    return lookupCache.get(key)
+  }
+
+  const result = findSponsorByKey(index, key)
+  lookupCache.set(key, result)
+  return result
+}
+
+function findSponsorByKey(index, key) {
   if (index[key]) {
     return toResult(key, index[key])
   }
@@ -93,6 +105,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === 'lookup' && typeof msg.company === 'string') {
     findSponsor(msg.company).then(sendResponse)
     return true // keep the message channel open for the async response
+  }
+  if (msg?.type === 'lookupBatch' && Array.isArray(msg.companies)) {
+    Promise.all(msg.companies.map((c) => findSponsor(c))).then(sendResponse)
+    return true
   }
   return false
 })
