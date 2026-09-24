@@ -186,18 +186,32 @@ function ensureFilterToggle() {
   bar.setAttribute('data-h1b-filter-toggle', 'true')
   bar.className = 'h1b-filter-bar'
   bar.innerHTML = `
-    <label class="h1b-filter-label">
-      <input type="checkbox" class="h1b-filter-checkbox" />
+    <span class="h1b-filter-label">
+      <span class="h1b-filter-checkbox" role="checkbox" aria-checked="false" tabindex="0"></span>
       Hide non-sponsors (H1B Identifier)
-    </label>
+    </span>
   `
   list.parentElement.insertBefore(bar, list)
 
+  // Host pages sometimes apply a blanket `pointer-events: none` (or similar) to bare
+  // <input> elements as part of their own custom-checkbox styling, which silently eats
+  // real clicks even though a JS-dispatched event still "works" — that's what made this
+  // look fine in testing but fail for real users. Using a plain span we fully own, with a
+  // click handler on the whole bar (not just the box), sidesteps host CSS entirely.
   const checkbox = bar.querySelector('.h1b-filter-checkbox')
-  checkbox.checked = filterEnabled
-  checkbox.addEventListener('change', () => {
-    filterEnabled = checkbox.checked
+  const setChecked = (value) => {
+    filterEnabled = value
+    checkbox.classList.toggle('h1b-filter-checkbox-checked', value)
+    checkbox.setAttribute('aria-checked', String(value))
     applyListFilter()
+  }
+  setChecked(filterEnabled)
+  bar.addEventListener('click', () => setChecked(!filterEnabled))
+  checkbox.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      setChecked(!filterEnabled)
+    }
   })
 }
 
