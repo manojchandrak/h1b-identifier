@@ -1,9 +1,11 @@
 // Finds the company name on supported job sites and injects a green/red
 // H-1B sponsorship badge right under it (single "detail pane" view), and
-// also badges every job card in the results list with a compact inline badge.
+// also badges every job card in the results list with a compact inline
+// badge plus a "Hide non-sponsors" filter toggle above the list.
 
 const BADGE_ATTR = 'data-h1b-badge'
 const FOR_ATTR = 'data-h1b-for'
+const RESULT_ATTR = 'data-h1b-result'
 
 /** Each entry returns the element whose text is the company name, or null. */
 const SITE_SELECTORS = {
@@ -139,7 +141,7 @@ function scan() {
   if (el) injectBadge(el)
 }
 
-// ---- Job list ("left rail") badging ----
+// ---- Job list ("left rail") badging + "hide non-sponsors" filter ----
 
 function makeListBadge(result) {
   const badge = document.createElement('span')
@@ -159,6 +161,60 @@ function makeListBadge(result) {
   return badge
 }
 
+let filterEnabled = false
+
+function applyListFilter() {
+  const selectors = LIST_SELECTORS[location.hostname]
+  if (!selectors) return
+  document.querySelectorAll(selectors.item).forEach((item) => {
+    const result = item.getAttribute(RESULT_ATTR)
+    item.style.display = filterEnabled && result === 'none' ? 'none' : ''
+  })
+}
+
+function ensureFilterToggle() {
+  const selectors = LIST_SELECTORS[location.hostname]
+  if (!selectors) return
+  if (document.querySelector('[data-h1b-filter-toggle]')) return
+
+  const firstItem = document.querySelector(selectors.item)
+  if (!firstItem) return
+  const list = firstItem.closest('ul, ol') || firstItem.parentElement
+  if (!list || !list.parentElement) return
+
+  const bar = document.createElement('div')
+  bar.setAttribute('data-h1b-filter-toggle', 'true')
+  bar.className = 'h1b-filter-bar'
+  bar.innerHTML = `
+    <span class="h1b-filter-label">
+      <span class="h1b-filter-checkbox" role="checkbox" aria-checked="false" tabindex="0"></span>
+      Hide non-sponsors (H1B Identifier)
+    </span>
+  `
+  list.parentElement.insertBefore(bar, list)
+
+  // Host pages sometimes apply a blanket `pointer-events: none` (or similar) to bare
+  // <input> elements as part of their own custom-checkbox styling, which silently eats
+  // real clicks even though a JS-dispatched event still "works" — that's what made this
+  // look fine in testing but fail for real users. Using a plain span we fully own, with a
+  // click handler on the whole bar (not just the box), sidesteps host CSS entirely.
+  const checkbox = bar.querySelector('.h1b-filter-checkbox')
+  const setChecked = (value) => {
+    filterEnabled = value
+    checkbox.classList.toggle('h1b-filter-checkbox-checked', value)
+    checkbox.setAttribute('aria-checked', String(value))
+    applyListFilter()
+  }
+  setChecked(filterEnabled)
+  bar.addEventListener('click', () => setChecked(!filterEnabled))
+  checkbox.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      setChecked(!filterEnabled)
+    }
+  })
+}
+
 function scanList() {
   const selectors = LIST_SELECTORS[location.hostname]
   if (!selectors) return
@@ -166,7 +222,9 @@ function scanList() {
   const items = document.querySelectorAll(selectors.item)
   if (items.length === 0) return
 
-  const pending = [] // { companyEl, companyName }
+  ensureFilterToggle()
+
+  const pending = [] // { item, companyEl, companyName }
   items.forEach((item) => {
     const companyEl = item.querySelector(selectors.company)
     if (!companyEl) return
@@ -178,7 +236,12 @@ function scanList() {
     if (stale) stale.remove()
 
     companyEl.setAttribute(FOR_ATTR, companyName)
-    pending.push({ companyEl, companyName })
+    item.removeAttribute(RESULT_ATTR)
+    // While the filter is active, hide newly-seen items until their lookup resolves,
+    // instead of showing them and only hiding a moment later — items LinkedIn lazily
+    // renders in as you scroll would otherwise flash into view before being filtered out.
+    if (filterEnabled) item.style.display = 'none'
+    pending.push({ item, companyEl, companyName })
   })
 
   if (pending.length === 0) return
@@ -194,7 +257,9 @@ function scanList() {
         if (p.companyEl.getAttribute(FOR_ATTR) !== p.companyName) return
         const badge = makeListBadge(result)
         p.companyEl.insertAdjacentElement('afterend', badge)
+        p.item.setAttribute(RESULT_ATTR, result.found ? 'found' : 'none')
       })
+      applyListFilter()
     }
   )
 }
