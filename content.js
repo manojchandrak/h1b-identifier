@@ -55,6 +55,26 @@ const LIST_SELECTORS = {
   },
 }
 
+// Shared multi-extension convention with Job Fitness Checker (which also
+// badges LinkedIn job listings): both insert into one ordered stack container
+// next to the company name instead of separately racing for the "next
+// sibling" position, which caused mis-ordering and stale-badge bugs once two
+// extensions started inserting there independently. H1B Identifier always
+// prepends (top); Job Fitness Checker always appends (bottom).
+function ensureBadgeStack(companyEl) {
+  let stack = companyEl.nextElementSibling
+  if (!stack || !stack.hasAttribute('data-ext-badge-stack')) {
+    stack = document.createElement('div')
+    stack.setAttribute('data-ext-badge-stack', 'true')
+    stack.style.display = 'flex'
+    stack.style.flexDirection = 'column'
+    stack.style.alignItems = 'flex-start'
+    stack.style.gap = '4px'
+    companyEl.insertAdjacentElement('afterend', stack)
+  }
+  return stack
+}
+
 function findCompanyElement() {
   const selectors = SITE_SELECTORS[location.hostname]
   if (!selectors) return null
@@ -121,9 +141,12 @@ function injectBadge(companyEl) {
 
   // SPA job boards frequently reuse the same DOM node when you click through
   // different listings, so the company text can change under an already-badged
-  // element. Clear the stale badge before looking up the new name.
-  const stale = companyEl.nextElementSibling
-  if (stale && stale.hasAttribute(BADGE_ATTR)) stale.remove()
+  // element. Clear our own stale badge before looking up the new name — leave
+  // any other extension's badge in the shared stack untouched.
+  const existingStack = companyEl.nextElementSibling
+  if (existingStack?.hasAttribute('data-ext-badge-stack')) {
+    existingStack.querySelector(`[${BADGE_ATTR}]`)?.remove()
+  }
 
   companyEl.setAttribute(FOR_ATTR, companyName)
 
@@ -131,8 +154,9 @@ function injectBadge(companyEl) {
     if (!result) return
     // The company changed again while this lookup was in flight — drop the stale response.
     if (companyEl.getAttribute(FOR_ATTR) !== companyName) return
-    const badge = makeBadge(result)
-    companyEl.insertAdjacentElement('afterend', badge)
+    const stack = ensureBadgeStack(companyEl)
+    stack.querySelector(`[${BADGE_ATTR}]`)?.remove()
+    stack.prepend(makeBadge(result))
   })
 }
 
@@ -265,8 +289,12 @@ function scanList() {
     if (!companyName) return
     if (companyEl.getAttribute(FOR_ATTR) === companyName) return
 
-    const stale = companyEl.parentElement?.querySelector(`[${BADGE_ATTR}]`)
-    if (stale) stale.remove()
+    // Clear our own stale badge (if any) from the shared stack; leave any
+    // other extension's badge there untouched.
+    const existingStack = companyEl.nextElementSibling
+    if (existingStack?.hasAttribute('data-ext-badge-stack')) {
+      existingStack.querySelector(`[${BADGE_ATTR}]`)?.remove()
+    }
 
     companyEl.setAttribute(FOR_ATTR, companyName)
     item.removeAttribute(RESULT_ATTR)
@@ -288,8 +316,9 @@ function scanList() {
         if (!result) return
         // Company changed again while this lookup was in flight.
         if (p.companyEl.getAttribute(FOR_ATTR) !== p.companyName) return
-        const badge = makeListBadge(result)
-        p.companyEl.insertAdjacentElement('afterend', badge)
+        const stack = ensureBadgeStack(p.companyEl)
+        stack.querySelector(`[${BADGE_ATTR}]`)?.remove()
+        stack.prepend(makeListBadge(result))
         p.item.setAttribute(RESULT_ATTR, result.found ? 'found' : 'none')
       })
       applyListFilter()
