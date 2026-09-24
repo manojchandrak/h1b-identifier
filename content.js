@@ -161,7 +161,38 @@ function makeListBadge(result) {
   return badge
 }
 
-let filterEnabled = false
+// Persisted in sessionStorage since turning the filter on triggers a real page
+// navigation (see ensureSortedByRecent) — without this the checkbox would reset
+// to unchecked right after the sort-by-recent reload.
+function readFilterEnabled() {
+  try {
+    return sessionStorage.getItem('h1b-filter-enabled') === '1'
+  } catch {
+    return false
+  }
+}
+function writeFilterEnabled(value) {
+  try {
+    sessionStorage.setItem('h1b-filter-enabled', value ? '1' : '0')
+  } catch {
+    // ignore — sessionStorage unavailable, filter state just won't survive a reload
+  }
+}
+
+let filterEnabled = readFilterEnabled()
+
+// LinkedIn's list cards only show a relative post date ("2 days ago") once sorted
+// by "Most recent" — under the default "Most relevant" sort they show no date at
+// all, so there's nothing to scrape/reorder ourselves. Switching LinkedIn's own
+// sort (via its sortBy=DD param) is also far safer than reordering their live,
+// framework-managed DOM nodes directly.
+function ensureSortedByRecent() {
+  if (location.hostname !== 'www.linkedin.com') return
+  const url = new URL(location.href)
+  if (url.searchParams.get('sortBy') === 'DD') return
+  url.searchParams.set('sortBy', 'DD')
+  location.href = url.toString()
+}
 
 function applyListFilter() {
   const selectors = LIST_SELECTORS[location.hostname]
@@ -201,8 +232,10 @@ function ensureFilterToggle() {
   const checkbox = bar.querySelector('.h1b-filter-checkbox')
   const setChecked = (value) => {
     filterEnabled = value
+    writeFilterEnabled(value)
     checkbox.classList.toggle('h1b-filter-checkbox-checked', value)
     checkbox.setAttribute('aria-checked', String(value))
+    if (value) ensureSortedByRecent()
     applyListFilter()
   }
   setChecked(filterEnabled)
