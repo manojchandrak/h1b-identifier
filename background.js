@@ -59,7 +59,11 @@ async function findSponsor(companyName) {
   }
 
   const keyWords = key.split(' ').filter((w) => w.length >= 3)
-  if (keyWords.length === 0) return { found: false }
+  // A single generic word (e.g. "Mogul", "Oak") is too weak a signal to fuzzy-match against
+  // 150k+ employer names: it previously matched an unrelated company like "FEDERAL MOGUL
+  // MOTORPARTS" just because both names contain "MOGUL". Require 2+ distinctive words before
+  // attempting the fallback; a single-word query only gets an exact match.
+  if (keyWords.length < 2) return { found: false }
   const keyWordSet = new Set(keyWords)
 
   for (const sponsorKey in index) {
