@@ -37,22 +37,31 @@ const SITE_SELECTORS = {
  * against LinkedIn's classic job search; Indeed/Glassdoor are best-effort and may
  * need adjustment if their markup differs. */
 const LIST_SELECTORS = {
-  'www.linkedin.com': {
-    item: 'li[data-occludable-job-id]',
-    company: '.artdeco-entity-lockup__subtitle',
-  },
-  'www.indeed.com': {
-    item: '.job_seen_beacon, .jobsearch-ResultsList > li',
-    company: '[data-testid="company-name"]',
-  },
-  'smartapply.indeed.com': {
-    item: '.job_seen_beacon, .jobsearch-ResultsList > li',
-    company: '[data-testid="company-name"]',
-  },
-  'www.glassdoor.com': {
-    item: 'li[data-test="jobListing"]',
-    company: '[data-test="employer-short-name"]',
-  },
+  'www.linkedin.com': [
+    // Classic layout (/jobs/search/, /jobs/collections/).
+    { item: 'li[data-occludable-job-id]', company: '.artdeco-entity-lockup__subtitle' },
+    // 2026 layout (/jobs/search-results/): scrambled class names, but every job is tagged
+    // componentkey="job-card-component-ref-<id>" and its paragraphs read title, company, location.
+    {
+      item: '[data-testid="lazy-column"] > [data-display-contents="true"]:has([componentkey^="job-card-component-ref-"])',
+      company: (item) => item.querySelectorAll('p')[1] ?? null,
+      container: '[data-testid="lazy-column"]',
+    },
+  ],
+  'www.indeed.com': [{ item: '.job_seen_beacon, .jobsearch-ResultsList > li', company: '[data-testid="company-name"]' }],
+  'smartapply.indeed.com': [{ item: '.job_seen_beacon, .jobsearch-ResultsList > li', company: '[data-testid="company-name"]' }],
+  'www.glassdoor.com': [{ item: 'li[data-test="jobListing"]', company: '[data-test="employer-short-name"]' }],
+}
+
+/** The list layout in use on this page: the first config whose items are on screen. */
+function listConfig() {
+  const configs = LIST_SELECTORS[location.hostname]
+  if (!configs) return null
+  return configs.find((c) => document.querySelector(c.item)) ?? null
+}
+
+function companyElementOf(config, item) {
+  return typeof config.company === 'function' ? config.company(item) : item.querySelector(config.company)
 }
 
 // Shared multi-extension convention with Job Fitness Checker (which also
@@ -82,7 +91,7 @@ function ensureBadgeStack(companyEl) {
 function findLinkedInCompanyByStructure(scope = document.querySelector('main') || document.body) {
   return (
     [...scope.querySelectorAll('a[href*="/company/"]')].find(
-      (a) => a.textContent.trim() && !a.closest(`li, aside, footer, [${BADGE_ATTR}]`)
+      (a) => a.textContent.trim() && !a.closest(`li, aside, footer, [${BADGE_ATTR}], [componentkey^="job-card-component-ref-"]`)
     ) || null
   )
 }
@@ -96,7 +105,7 @@ function findCompanyElement() {
   }
   if (location.hostname === 'www.linkedin.com') {
     // Standalone job page: the whole main content is the job.
-    if (location.pathname.startsWith('/jobs/view/')) return findLinkedInCompanyByStructure()
+    if (location.pathname.startsWith('/jobs/view/') || location.pathname.startsWith('/jobs/search-results')) return findLinkedInCompanyByStructure()
     // Search and collection pages: only look inside the right-hand detail pane (never the job
     // list), so a half-loaded pane can't pick up the wrong company.
     const pane = document.querySelector('.scaffold-layout__detail, .jobs-search__job-details, .jobs-details')
@@ -239,22 +248,26 @@ function ensureSortedByRecent() {
 }
 
 function applyListFilter() {
-  const selectors = LIST_SELECTORS[location.hostname]
-  if (!selectors) return
-  document.querySelectorAll(selectors.item).forEach((item) => {
+  const config = listConfig()
+  if (!config) return
+  document.querySelectorAll(config.item).forEach((item) => {
     const result = item.getAttribute(RESULT_ATTR)
-    item.style.display = filterEnabled && result === 'none' ? 'none' : ''
+    const display = filterEnabled && result === 'none' ? 'none' : ''
+    item.style.display = display
+    // The new layout separates cards with <hr>; hide the one after a hidden card too.
+    const next = item.nextElementSibling
+    if (next?.tagName === 'HR') next.style.display = display
   })
 }
 
 function ensureFilterToggle() {
-  const selectors = LIST_SELECTORS[location.hostname]
-  if (!selectors) return
+  const config = listConfig()
+  if (!config) return
   if (document.querySelector('[data-h1b-filter-toggle]')) return
 
-  const firstItem = document.querySelector(selectors.item)
+  const firstItem = document.querySelector(config.item)
   if (!firstItem) return
-  const list = firstItem.closest('ul, ol') || firstItem.parentElement
+  const list = firstItem.closest(config.container ?? 'ul, ol') || firstItem.parentElement
   if (!list || !list.parentElement) return
 
   const bar = document.createElement('div')
@@ -293,17 +306,17 @@ function ensureFilterToggle() {
 }
 
 function scanList() {
-  const selectors = LIST_SELECTORS[location.hostname]
-  if (!selectors) return
+  const config = listConfig()
+  if (!config) return
 
-  const items = document.querySelectorAll(selectors.item)
+  const items = document.querySelectorAll(config.item)
   if (items.length === 0) return
 
   ensureFilterToggle()
 
   const pending = [] // { item, companyEl, companyName }
   items.forEach((item) => {
-    const companyEl = item.querySelector(selectors.company)
+    const companyEl = companyElementOf(config, item)
     if (!companyEl) return
     const companyName = companyEl.textContent.trim()
     if (!companyName) return
