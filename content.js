@@ -75,12 +75,32 @@ function ensureBadgeStack(companyEl) {
   return stack
 }
 
+// LinkedIn's standalone /jobs/view/<id> pages use obfuscated, rotating class names, so none of
+// the class-based selectors above match there (and the page has no headings to anchor on). Fall
+// back to structure that doesn't change: the employer is the first link to a /company/ page with
+// visible text in the main content, ignoring job-list rows, sidebars and our own badges.
+function findLinkedInCompanyByStructure(scope = document.querySelector('main') || document.body) {
+  return (
+    [...scope.querySelectorAll('a[href*="/company/"]')].find(
+      (a) => a.textContent.trim() && !a.closest(`li, aside, footer, [${BADGE_ATTR}]`)
+    ) || null
+  )
+}
+
 function findCompanyElement() {
   const selectors = SITE_SELECTORS[location.hostname]
   if (!selectors) return null
   for (const sel of selectors) {
     const el = document.querySelector(sel)
     if (el && el.textContent.trim()) return el
+  }
+  if (location.hostname === 'www.linkedin.com') {
+    // Standalone job page: the whole main content is the job.
+    if (location.pathname.startsWith('/jobs/view/')) return findLinkedInCompanyByStructure()
+    // Search and collection pages: only look inside the right-hand detail pane (never the job
+    // list), so a half-loaded pane can't pick up the wrong company.
+    const pane = document.querySelector('.scaffold-layout__detail, .jobs-search__job-details, .jobs-details')
+    if (pane) return findLinkedInCompanyByStructure(pane)
   }
   return null
 }
